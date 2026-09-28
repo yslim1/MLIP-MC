@@ -114,6 +114,8 @@ Examples:
                         help='Interval for writing structures (default: 100)')
     parser.add_argument('--overwrite-checkpoints', action='store_true',
                         help='Write trajectory files')
+    parser.add_argument('--dispersion', action='store_true',
+                        help='Add D3 dispersion correction (SevenNet backend only)')
     return parser.parse_args()
 
 
@@ -151,7 +153,8 @@ def main() -> None:
                 model_path=args.model,
                 output_dir=args.output_dir,
                 hf_token=args.hf_token,
-                gpu_id=gpu_id
+                gpu_id=gpu_id,
+                dispersion=args.dispersion
             )
         else:
             # GCMC mode
@@ -182,6 +185,7 @@ def main() -> None:
                 write_trajectory=args.write_trajectory,
                 trajectory_interval=args.trajectory_interval,
                 overwrite_checkpoints=args.overwrite_checkpoints,
+                dispersion=args.dispersion,
 
 
             )

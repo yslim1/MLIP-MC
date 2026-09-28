@@ -335,6 +335,12 @@ def _detect_backend() -> str:
         return 'orb-models'
     except ImportError:
         pass
+
+    try:
+        from sevenn.calculator import SevenNetCalculator
+        return 'sevennet'
+    except ImportError:
+        pass
     
     raise ImportError(
         "No MLIP backend found. Please install one of:\n"
@@ -344,7 +350,7 @@ def _detect_backend() -> str:
     )
 
 
-def _load_model(model_path: str, device: str, backend: Optional[str] = None) -> Any:
+def _load_model(model_path: str, device: str, backend: Optional[str] = None, dispersion: bool = False) -> Any:
     """
     Load an MLIP model using the appropriate backend.
     
@@ -357,6 +363,8 @@ def _load_model(model_path: str, device: str, backend: Optional[str] = None) -> 
         Device to use ('cuda' or 'cpu')
     backend : str, optional
         Backend to use ('fairchem', 'mace-torch', or 'orb-models'). If None, auto-detects.
+    dispersion : bool
+        If True, add D3 dispersion correction (currently SevenNet only)
     
     Returns
     -------
@@ -413,6 +421,14 @@ def _load_model(model_path: str, device: str, backend: Optional[str] = None) -> 
 
         calc = ORBCalculator(orbff, device=device)
         return calc
+
+    elif backend == 'sevennet':
+        from sevenn.calculator import SevenNetCalculator, SevenNetD3Calculator
+
+        # model_path may be a local checkpoint or a pretrained keyword (e.g. '7net-omni')
+        if dispersion:
+            return SevenNetD3Calculator(model=model_path, device=device, modal='mpa', enable_cueq=True)
+        return SevenNetCalculator(model=model_path, device=device, modal='mpa', enable_cueq=True)
     
     else:
         raise ValueError(f"Unknown backend: {backend}")
@@ -435,6 +451,7 @@ def run_single_pressure(
     write_trajectory: bool = False,
     trajectory_interval: int = 100,
     overwrite_checkpoints: bool = False,
+    dispersion: bool = False,
 ) -> None:
     """
     Run GCMC simulation for a single pressure point on a specific GPU.
@@ -496,7 +513,7 @@ def run_single_pressure(
         backend = _detect_backend()
         device_str = _format_device_str(gpu_id)
         print(f"  [{device_str}] Using backend: {backend}")
-        model = _load_model(model_path, device=device, backend=backend)
+        model = _load_model(model_path, device=device, backend=backend, dispersion=dispersion)
         
         P = P_bar * bar
         print(f"  [{device_str}] Starting simulation at P = {P_bar:g} bar", flush=True)
@@ -664,7 +681,8 @@ def run_gcmc(
     checkpoint_interval: int = 10000,
     write_trajectory: bool = False,
     trajectory_interval : int = 100,
-    overwrite_checkpoints : bool = False
+    overwrite_checkpoints : bool = False,
+    dispersion: bool = False
 ) -> Dict[str, Any]:
     """
     Run GCMC isotherm simulation for gas adsorption in a porous material.
@@ -779,6 +797,8 @@ def run_gcmc(
                     "(weights will be downloaded/cached automatically).",
                 )
                 model_path = None
+            elif backend == 'sevennet':
+                _print_info("Model Status", f"Using SevenNet pretrained model '{model_path}'")
             else:
                 raise FileNotFoundError(
                     f"Model file not found at {model_path}\n"
@@ -868,7 +888,7 @@ def run_gcmc(
             P_bar, temperature, model_path, atoms_frame, atoms_ads,
             n_equilibration_steps, n_production_steps, n_total_steps,
             gpu_id, result_queue, adsorbate_name, output_dir, checkpoint_interval, 
-            write_trajectory, trajectory_interval, overwrite_checkpoints
+            write_trajectory, trajectory_interval, overwrite_checkpoints, dispersion
         ))
         p.start()
         active_processes.append(p)
@@ -950,7 +970,8 @@ def run_widom(
     n_trials: int = 10000,
     output_dir: str = 'results',
     hf_token: Optional[str] = None,
-    gpu_id: Union[int, str] = 0
+    gpu_id: Union[int, str] = 0,
+    dispersion: bool = False
 ) -> Dict[str, Any]:
     """
     Run Widom insertion calculation for estimating Henry's constants and adsorption energies.
@@ -1052,6 +1073,8 @@ def run_widom(
                     "(weights will be downloaded/cached automatically).",
                 )
                 model_path = None
+            elif backend == 'sevennet':
+                _print_info("Model Status", f"Using SevenNet pretrained model '{model_path}'")
             else:
                 raise FileNotFoundError(
                     f"Model file not found at {model_path}\n"
@@ -1118,7 +1141,7 @@ def run_widom(
     _print_info("Backend", backend)
     
     # Load model
-    model = _load_model(model_path, device=device, backend=backend)
+    model = _load_model(model_path, device=device, backend=backend, dispersion=dispersion)
     
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
